@@ -19,19 +19,20 @@ fn window() -> Conf {
 async fn main() {
     let x_range = make_range(0.0, 8.0, 1.0);
     let data_points = linear_function(&x_range);
-    let (x_dim, y_dim) = get_dimensions(&data_points);
-
-    for x in x_dim {
-        println!("{}", x);
-    }
-    println!();
-    for y in y_dim {
-        println!("{}", y);
-    }
+    // let (x_dim, y_dim) = dimensions;
+    // for dim in x_dim {
+    //     println!("X: {}, Y: {}", dim.x, dim.y);
+    // }
+    // println!();
+    // for dim in y_dim {
+    //     println!("X: {}, Y: {}", dim.x, dim.y);
+    // }
+    // std::process::exit(0);
 
     loop {
         clear_background(BLACK);
-        draw_axis(&data_points);
+        let dimensions = axis_dimensions(&data_points);
+        draw_axis(&data_points, &dimensions);
         if is_key_pressed(KeyCode::Q) {
             break;
         }
@@ -49,39 +50,76 @@ fn linear_function(range: &[f32]) -> Vec<Vec2> {
     points
 }
 
-fn get_dimensions(points: &[Vec2]) -> (Vec<f32>, Vec<f32>) {
+fn axis_dimensions(points: &[Vec2]) -> (Vec<Vec2>, Vec<Vec2>) {
+    //sus out actual dimensions that these positions give on the body of the graph;
+    //find max, divide by max, multiply every element by body width.
+
     let mut x_range = Vec::new();
     let mut y_range = Vec::new();
-
     for point in points {
         x_range.push(point.x);
         y_range.push(point.y);
     }
 
-    //sus out actual dimensions that these positions give on the body of the graph;
-    //find max, divide by max, multiply every element by body width.
-
     let bodywidth = 0.8 * screen_width();
     let bodyheight = 0.8 * screen_height();
     let x_max = f32max(&x_range);
     let y_max = f32max(&y_range);
+    let x_buffer = 0.075 * screen_width();
+    let y_buffer = 0.075 * screen_height();
 
-    for x in x_range.iter_mut() {
-        *x /= x_max;
-        *x *= bodywidth;
+    let mut x_dims: Vec<Vec2> = Vec::new();
+    let mut y_dims: Vec<Vec2> = Vec::new();
+    for point in points {
+        let mut x = point.x;
+        x /= x_max;
+        x *= bodywidth;
+        x += x_buffer;
+        let new_vec2 = Vec2::new(x, screen_height() - y_buffer);
+        x_dims.push(new_vec2);
+
+        let mut y = point.y;
+        y /= y_max;
+        y *= bodyheight;
+        y += y_buffer;
+        let new_vec2 = Vec2::new(x_buffer, y);
+        y_dims.push(new_vec2);
     }
 
-    for y in y_range.iter_mut() {
-        *y /= y_max;
-        *y *= bodyheight;
-    }
-
-    (x_range, y_range)
+    (x_dims, y_dims)
 }
 
-fn draw_axis(points: &Vec<Vec2>) {
+fn draw_axis(data_points: &[Vec2], dimensions: &(Vec<Vec2>, Vec<Vec2>)) {
     //I am going to do arithmetic in terms of percentile.
     //So I can simply multiply by window size.
+
+    let (x_dim, y_dim) = dimensions;
+    for i in 0..data_points.len() {
+        let vector = data_points[i];
+        let x_position = x_dim[i];
+        let y_position = y_dim[i];
+
+        //drawing x-value
+        text_draw(
+            &format!("{:.2}", vector.x),
+            x_position.x,
+            x_position.y,
+            None,
+            30,
+            0.0,
+            YELLOW,
+        );
+        //drawing y-value
+        text_draw(
+            &format!("{:.2}", vector.y),
+            y_position.x,
+            y_position.y,
+            None,
+            30,
+            0.0,
+            YELLOW,
+        );
+    }
 
     //y-axis part of frame
     draw_rectangle(
