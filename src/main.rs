@@ -7,7 +7,7 @@ fn window() -> Conf {
         window_width: 800,
         window_height: 600,
         platform: miniquad::conf::Platform {
-            swap_interval: Some(1), // 0: unlimited, 1: 60fps, 2: 30fps
+            swap_interval: Some(2), // 0: unlimited, 1: 60fps, 2: 30fps
             ..Default::default()
         },
         ..Default::default()
@@ -17,8 +17,10 @@ fn window() -> Conf {
 //-------------Main Loop--------------------------------------------------------
 #[macroquad::main(window)]
 async fn main() {
-    let x_range = make_range(0.0, 8.0, 1.0);
-    let data_points = linear_function(&x_range);
+    let x_data = make_range(0.0, 16.0, 0.1);
+    let y_data = target_function(&x_data);
+    let x_max = f32max(&x_data);
+    let y_max = f32max(&y_data);
     // let (x_dim, y_dim) = dimensions;
     // for dim in x_dim {
     //     println!("X: {}, Y: {}", dim.x, dim.y);
@@ -31,8 +33,13 @@ async fn main() {
 
     loop {
         clear_background(BLACK);
-        let dimensions = axis_dimensions(&data_points);
-        draw_axis(&data_points, &dimensions);
+        let x_values = axis_values(x_max);
+        let y_values = axis_values(y_max);
+        let dimensions = axis_dimensions(&x_values, &y_values, x_max, y_max);
+        draw_axis(&(x_values, y_values), &dimensions);
+
+        let point_coord = point_coord(&x_data, &y_data, x_max, y_max);
+        draw_points(&point_coord);
         if is_key_pressed(KeyCode::Q) {
             break;
         }
@@ -40,68 +47,110 @@ async fn main() {
     }
 }
 
-fn linear_function(range: &[f32]) -> Vec<Vec2> {
-    let mut points: Vec<Vec2> = Vec::new();
-    for x in range {
-        let y = *x;
-        points.push(Vec2::new(*x, y));
-    }
+fn point_coord(x_data: &[f32], y_data: &[f32], x_max: f32, y_max: f32) -> Vec<Vec2> {
+    let mut coordinates = Vec::new();
 
-    points
-}
-
-fn axis_dimensions(points: &[Vec2]) -> (Vec<Vec2>, Vec<Vec2>) {
-    //sus out actual dimensions that these positions give on the body of the graph;
-    //find max, divide by max, multiply every element by body width.
-
-    let mut x_range = Vec::new();
-    let mut y_range = Vec::new();
-    for point in points {
-        x_range.push(point.x);
-        y_range.push(point.y);
-    }
+    let origin: Vec2 = Vec2::new(0.1 * screen_width(), 0.9 * screen_height() + 2.0);
 
     let bodywidth = 0.8 * screen_width();
     let bodyheight = 0.8 * screen_height();
-    let x_max = f32max(&x_range);
-    let y_max = f32max(&y_range);
+
+    //normalize values
+    //stretch by frame width and height
+    //add origin buffer
+
+    // x_data and y_data are essentially guarenteed to have the same length.
+    for i in 0..x_data.len() {
+        let mut x = x_data[i];
+        x /= x_max;
+        x *= bodywidth;
+        x += origin.x;
+
+        let mut y = y_data[i];
+        y /= y_max;
+        y *= bodyheight;
+        y = origin.y - y;
+
+        let new_vec2 = Vec2::new(x, y);
+        coordinates.push(new_vec2);
+    }
+
+    coordinates
+}
+
+fn draw_points(coordinates: &Vec<Vec2>) {
+    for coord in coordinates {
+        draw_circle(coord.x, coord.y, 5.0, YELLOW);
+    }
+}
+
+fn target_function(range: &[f32]) -> Vec<f32> {
+    let result: Vec<f32> = range.iter().map(|x| x.powf(0.5)).collect();
+    result
+}
+
+fn axis_values(max: f32) -> Vec<f32> {
+    let mut values = make_range(0.0, max, max / 5.0);
+    for value in values.iter_mut() {
+        *value = value.floor();
+    }
+
+    values
+}
+
+fn axis_dimensions(
+    x_values: &Vec<f32>,
+    y_values: &Vec<f32>,
+    x_max: f32,
+    y_max: f32,
+) -> (Vec<Vec2>, Vec<Vec2>) {
+    //sus out actual dimensions that these positions give on the body of the graph;
+    //find max, divide by max, multiply every element by body width.
+
+    let bodywidth = 0.8 * screen_width();
+    let bodyheight = 0.8 * screen_height();
     let x_buffer = 0.075 * screen_width();
     let y_buffer = 0.075 * screen_height();
 
     let mut x_dims: Vec<Vec2> = Vec::new();
     let mut y_dims: Vec<Vec2> = Vec::new();
-    for point in points {
-        let mut x = point.x;
+    for value in x_values {
+        let mut x = *value;
         x /= x_max;
         x *= bodywidth;
         x += x_buffer;
         let new_vec2 = Vec2::new(x, screen_height() - y_buffer);
         x_dims.push(new_vec2);
-
-        let mut y = point.y;
+    }
+    for value in y_values {
+        let mut y = *value;
         y /= y_max;
         y *= bodyheight;
         y += y_buffer;
-        let new_vec2 = Vec2::new(x_buffer, y);
+        let new_vec2 = Vec2::new(x_buffer, screen_height() - y);
         y_dims.push(new_vec2);
     }
 
     (x_dims, y_dims)
 }
 
-fn draw_axis(data_points: &[Vec2], dimensions: &(Vec<Vec2>, Vec<Vec2>)) {
+fn draw_axis(values: &(Vec<f32>, Vec<f32>), dimensions: &(Vec<Vec2>, Vec<Vec2>)) {
     //I am going to do arithmetic in terms of percentile.
     //So I can simply multiply by window size.
 
+    let (x_val, y_val) = values;
     let (x_dim, y_dim) = dimensions;
-    for i in 0..data_points.len() {
-        let vector = data_points[i];
+    if x_val.len() != y_val.len() {
+        println!("The arrays containing values for both axis were not of the same length.");
+        std::process::exit(1);
+    }
+    for i in 0..x_val.len() {
         let x_position = x_dim[i];
         let y_position = y_dim[i];
 
         //drawing x-value
         text_draw(
-            &format!("{:.2}", vector.x),
+            &format!("{:.2}", x_val[i]),
             x_position.x,
             x_position.y,
             None,
@@ -109,9 +158,10 @@ fn draw_axis(data_points: &[Vec2], dimensions: &(Vec<Vec2>, Vec<Vec2>)) {
             0.0,
             YELLOW,
         );
+
         //drawing y-value
         text_draw(
-            &format!("{:.2}", vector.y),
+            &format!("{:.2}", y_val[i]),
             y_position.x,
             y_position.y,
             None,
@@ -151,7 +201,7 @@ fn draw_axis(data_points: &[Vec2], dimensions: &(Vec<Vec2>, Vec<Vec2>)) {
 
     text_draw(
         "Y-Axis",
-        screen_width() * 0.05,
+        screen_width() * 0.025,
         screen_height() / 2.0,
         None,
         30,
